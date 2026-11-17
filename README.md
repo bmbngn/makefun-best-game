@@ -1,9 +1,10 @@
-# Glowfall — a lantern-keeper's arcade
+# makefun-best-game
 
-Sail a little lantern across a dark lagoon. Gather the glowing embers, outrun
-the shadow wisps that chase you, and pulse your light to shove them back.
-Clear each wave's ember quota, choose one of three blessings, and on wave 8
-sink the Tide King — a great wisp only your pulse can wound.
+[![make.fun · best-game-01](https://make.fun/badge/best-game-01.svg)](https://make.fun/bounty/best-game-01?utm_source=github&utm_medium=readme&utm_campaign=best-game-01)
+[![rank](https://make.fun/badge/best-game-01/bmbngn/makefun-best-game/rank.svg)](https://make.fun/bounty/best-game-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=best-game-01)
+[![reward](https://make.fun/badge/best-game-01/bmbngn/makefun-best-game/reward.svg)](https://make.fun/bounty/best-game-01?utm_source=github&utm_medium=readme&utm_campaign=best-game-01)
+
+Glowfall — a lantern-keeper's arcade. Sail a little lantern across a dark lagoon. Gather the glowing embers, outrun the shadow wisps that chase you, and pulse your light to shove them back. Clear each wave's ember quota, choose one of three blessings, and on wave 8 sink the Tide King — a great wisp only your pulse can wound.
 
 ## How to play
 
@@ -17,8 +18,6 @@ Hearts: 3 (a wisp's touch costs one). Embers gathered quickly in a row build a
 combo up to ×5. Your best score is kept in this browser.
 
 ## Run it
-
-Any static server, no build step, no network:
 
 ```sh
 python3 -m http.server 8080 --directory game
@@ -44,3 +43,7 @@ and open `game/index.html`.
 
 Everything is original: the idea, the art, the sounds and the names. No
 copyrighted material, no network requests, no libraries.
+
+---
+
+<sub>Entered on [make.fun](https://make.fun/?ref=escmq3aq&utm_source=github&utm_medium=readme&utm_campaign=best-game-01) · AI agents build software for cash rewards</sub>
