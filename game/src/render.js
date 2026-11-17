@@ -1,7 +1,7 @@
 // Everything the player sees: the night, the indigo cloth, the faint gold
 // guides, the glowing ink, the creeping darkness, the HUD, and the screens.
 // The field is 1280x720 logical; the canvas is scaled to fit the window.
-import { CLOTH, CLOTHS, FIELD, PALETTE, WARN_AT_SECONDS } from './config.js';
+import { CLOTH, CLOTHS, FIELD, PALETTE, WARN_AT_SECONDS, collectionValueLabel, valueLabel } from './config.js';
 import { motifStrokes } from './motifs.js';
 
 export const SCREEN_TITLE = 'title';
@@ -247,7 +247,7 @@ export function createRenderer(canvas) {
     ctx.fillText(`Score ${state.score}`, FIELD.width - 44, 34);
     ctx.font = '16px Georgia, serif';
     ctx.fillStyle = PALETTE.textDim;
-    ctx.fillText(`Best ${best}${muted ? ' · muted (M)' : ''}`, FIELD.width - 44, 60);
+    ctx.fillText(`Value ${valueLabel(cloth)} · Best ${best}${muted ? ' · muted (M)' : ''}`, FIELD.width - 44, 60);
     for (let i = 0; i < 3; i += 1) {
       heart(1120 - i * 30, 640, i < state.hearts, 1.4);
     }
@@ -334,6 +334,8 @@ export function createRenderer(canvas) {
     ctx.font = '19px Georgia, serif';
     ctx.fillStyle = PALETTE.textDim;
     ctx.fillText(`Best score ${best} · P pauses · M mutes · Enter restarts`, FIELD.width / 2, 545);
+    ctx.font = 'italic 17px Georgia, serif';
+    ctx.fillText('UNESCO heritage since 2009 — a tulis cloth takes 1–6 months to draw.', FIELD.width / 2, 576);
     ctx.restore();
   }
 
@@ -351,6 +353,23 @@ export function createRenderer(canvas) {
     ctx.fillText('P or Enter to carry on', FIELD.width / 2, 375);
     ctx.fillText('M mutes the sound', FIELD.width / 2, 408);
     ctx.restore();
+  }
+
+  function wrapLines(text, maxWidth) {
+    const words = text.split(' ');
+    const lines = [];
+    let line = '';
+    for (const word of words) {
+      const next = line === '' ? word : `${line} ${word}`;
+      if (ctx.measureText(next).width > maxWidth && line !== '') {
+        lines.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    if (line !== '') lines.push(line);
+    return lines;
   }
 
   function drawClear(state, best) {
@@ -376,9 +395,17 @@ export function createRenderer(canvas) {
     ctx.fillStyle = PALETTE.textDim;
     ctx.fillText(`Accuracy ${Math.round(state.accuracy * 100)}% · bonus ${state.clearBonus}`, FIELD.width / 2, 340);
     ctx.fillText(`Score ${state.score} · Best ${Math.max(best, state.score)}`, FIELD.width / 2, 380);
+    // The cloth's real-world value and one verified fact about its motif.
+    ctx.fillStyle = PALETTE.gold;
+    ctx.font = 'bold 20px Georgia, serif';
+    ctx.fillText(`Worth approx. ${valueLabel(cloth)} per metre — ${cloth.craft} batik`, FIELD.width / 2, 414);
+    ctx.font = 'italic 19px Georgia, serif';
+    ctx.fillStyle = PALETTE.textDim;
+    const trivia = wrapLines(cloth.trivia, 540);
+    trivia.forEach((line, i) => ctx.fillText(line, FIELD.width / 2, 442 + i * 26));
     ctx.fillStyle = PALETTE.text;
     ctx.font = 'bold 26px Georgia, serif';
-    ctx.fillText(state.clothIndex + 1 >= CLOTHS.length ? 'Enter — see the gallery' : 'Enter — next cloth', FIELD.width / 2, 460);
+    ctx.fillText(state.clothIndex + 1 >= CLOTHS.length ? 'Enter — see the gallery' : 'Enter — next cloth', FIELD.width / 2, 500);
     ctx.restore();
   }
 
@@ -458,10 +485,16 @@ export function createRenderer(canvas) {
     ctx.textAlign = 'center';
     ctx.fillStyle = PALETTE.text;
     ctx.font = 'bold 30px Georgia, serif';
-    ctx.fillText(`Score ${state.score} · Best ${Math.max(best, state.score)}`, FIELD.width / 2, 470);
+    ctx.fillText(`Score ${state.score} · Best ${Math.max(best, state.score)}`, FIELD.width / 2, 460);
     ctx.fillStyle = PALETTE.gold;
     ctx.font = 'bold 26px Georgia, serif';
-    ctx.fillText('Enter — draw them again', FIELD.width / 2, 540);
+    ctx.fillText(`Collection value approx. ${collectionValueLabel()}`, FIELD.width / 2, 500);
+    ctx.fillStyle = PALETTE.textDim;
+    ctx.font = '19px Georgia, serif';
+    ctx.fillText('Real prices, approx. per metre: print Rp 25k–80k · cap Rp 150k–500k · tulis Rp 500k–5M+', FIELD.width / 2, 536);
+    ctx.fillStyle = PALETTE.gold;
+    ctx.font = 'bold 26px Georgia, serif';
+    ctx.fillText('Enter — draw them again', FIELD.width / 2, 588);
     ctx.restore();
   }
 

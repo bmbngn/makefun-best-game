@@ -6,6 +6,8 @@
 
 Batik — draw batik patterns to light the cloth. Trace the glowing gold guides with your mouse or finger, finish each motif before the wax cools and the darkness creeps in, and light all seven cloths: Kawung, Parang, Mega Mendung, Truntum, Sekar Jagad, Sidomukti, and Garuda. Three hearts. Your best score is kept in this browser.
 
+Each cloth is priced like real batik: the early cloths are cheap printed and stamped cap pieces, the late ones are hand-drawn tulis worth millions of rupiah — and every lit cloth tells you one true thing about its motif, from Parang's royal past to the $6.5M a museum paid for rare Indonesian textiles.
+
 ## How to play
 
 - **Draw:** press and drag across the cloth with mouse or touch — the canting tool inks gold wherever it follows a guide, and the snap to a guide is generous
@@ -26,7 +28,7 @@ then open http://localhost:8080. Or serve the whole repository the same way and 
 
 - `main.ts` — the entry program: copies `game/` and `screenshots/` to the output and writes `dossier.json` (make.fun best-game-01)
 - `game/index.html` — the page, one canvas
-- `game/src/config.js` — every tuning number and colour
+- `game/src/config.js` — every tuning number and colour, plus the seven cloths' real-world price tiers and trivia
 - `game/src/motifs.js` — the seven traditional motifs, drawn from geometry
 - `game/src/world.js` — the rules: tracing, scoring, hearts, the cooling wax
 - `game/src/input.js` — pointer and keyboard input
