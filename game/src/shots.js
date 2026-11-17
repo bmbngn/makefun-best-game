@@ -1,109 +1,77 @@
-// The screenshot scenes behind ?shot=start|play|upgrade|end. Each one plays the real
-// rules forward from a fresh world for a fixed number of steps, steered by a simple
-// autopilot, so the frame is what a real game looks like and the same seed always
-// gives the same frame. The upgrade scene plays until a wave is cleared and stops on
-// the choice screen; the end scene's pilot is short-sighted, so it is caught out as
-// a hurried player is, and the frame shows the game-over screen.
-//
-// The pilot scores eight directions each step: it likes moving toward the nearest
-// ember, it dislikes moving toward a wisp (more so the closer the wisp is), and it
-// prefers staying near the middle of the lagoon so it is never pinned in a corner.
-// It pulses when a wisp gets close enough to shove.
-import { FIELD, STEP } from './config.js';
-import { EVENT_OVER, EVENT_WAVE_CLEAR } from './world.js';
-import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE, SCREEN_UPGRADE } from './render.js';
+// The screenshot scenes behind ?shot=start|play|done|end. Each one plays the
+// real rules forward from a fresh world, steered by a pen that traces the
+// guide strokes one at a time — lifting between strokes, as a hand would — so
+// the frame is what a real game looks like and the same seed always gives the
+// same frame. The play scene traces part of the first cloth; the done scene
+// traces all of it and stops on the cloth-lit screen; the end scene traces
+// all seven cloths and stops on the gallery.
+import { STEP } from './config.js';
+import { EVENT_CLEAR, EVENT_OVER, EVENT_WIN } from './world.js';
+import { SCREEN_CLEAR, SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE, SCREEN_WIN } from './render.js';
+import { CLOTH } from './config.js';
 
-const START_SECONDS = 6;
-const PLAY_SECONDS = 30;
-const END_LIMIT_SECONDS = 600;
-const UPGRADE_LIMIT_SECONDS = 180;
-
-const DIRECTIONS = [
-  { x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 },
-  { x: 0.7071, y: 0.7071 }, { x: -0.7071, y: 0.7071 },
-  { x: 0.7071, y: -0.7071 }, { x: -0.7071, y: -0.7071 },
-];
-
-/**
- * The steering vector for one step, and whether to pulse. `careful` weighs the
- * wisps more heavily: the play pilot dodges early, the end pilot reacts late.
- */
-function autopilot(state, careful) {
-  const player = state.player;
-  let ember = null;
-  let emberD = Infinity;
-  for (const e of state.embers) {
-    if (!e.active) continue;
-    const d = Math.hypot(e.x - player.x, e.y - player.y);
-    if (d < emberD) {
-      emberD = d;
-      ember = e;
-    }
-  }
-  let wispD = Infinity;
-  for (const w of state.wisps) {
-    if (!w.active) continue;
-    const d = Math.hypot(w.x - player.x, w.y - player.y);
-    if (d < wispD) wispD = d;
-  }
-  const wispWeight = careful ? 3.2 : 1.4;
-  const lookAhead = 0.45;
-  let best = DIRECTIONS[0];
-  let bestScore = -Infinity;
-  for (const dir of DIRECTIONS) {
-    const nx = Math.min(FIELD.width - 20, Math.max(20, player.x + dir.x * 300 * lookAhead));
-    const ny = Math.min(FIELD.height - 20, Math.max(76, player.y + dir.y * 300 * lookAhead));
-    let score = 0;
-    if (ember) score -= Math.hypot(ember.x - nx, ember.y - ny) * 0.01;
-    let nearWisp = Infinity;
-    for (const w of state.wisps) {
-      if (!w.active) continue;
-      const d = Math.hypot(w.x - nx, w.y - ny);
-      if (d < nearWisp) nearWisp = d;
-    }
-    if (nearWisp !== Infinity) score += Math.min(nearWisp, 320) * 0.01 * wispWeight;
-    // Prefer the middle of the lagoon: a corner is a trap.
-    score -= Math.hypot(nx - FIELD.width / 2, ny - FIELD.height / 2) * 0.001;
-    if (score > bestScore) {
-      bestScore = score;
-      best = dir;
-    }
-  }
-  return { steer: best, pulse: wispD < 190 };
+function penAt(lx, ly, drawing = true) {
+  return { x: lx + CLOTH.x, y: ly + CLOTH.y, drawing };
 }
 
 /**
- * Set `world` to the named scene (start, play, upgrade or end; any other name is
- * start) and return the screen to draw over it and the best score to show.
+ * Trace the given segments in order, `perStep` guide points per fixed step,
+ * lifting the pen between strokes. Stops early on a clear / over / win event
+ * and returns the events seen.
+ */
+function traceSegments(world, segments, perStep, maxSegments = Infinity) {
+  let events = 0;
+  let done = 0;
+  for (const seg of segments) {
+    if (done >= maxSegments) break;
+    done += 1;
+    let idx = 0;
+    const pts = seg.filter((p) => !p.covered);
+    for (let i = 0; i < 60 * 120 && idx < pts.length; i += 1) {
+      const target = pts[Math.min(pts.length - 1, Math.floor(idx))];
+      events |= world.step(STEP, penAt(target.x, target.y));
+      idx += perStep;
+      if (events & (EVENT_CLEAR | EVENT_OVER | EVENT_WIN)) return events;
+    }
+    // Lift the pen and let the world tick while moving to the next stroke.
+    for (let i = 0; i < 4; i += 1) world.step(STEP, penAt(0, 0, false));
+    if (events & (EVENT_CLEAR | EVENT_OVER | EVENT_WIN)) return events;
+  }
+  return events;
+}
+
+/**
+ * Set `world` to the named scene and return the screen to draw over it and
+ * the best score to show.
  */
 export function stageShot(name, world) {
   world.reset();
   if (name === 'play') {
-    for (let i = 0; i < PLAY_SECONDS / STEP; i += 1) {
-      const a = autopilot(world.state, true);
-      if (world.step(STEP, a.steer, a.pulse, false) & EVENT_OVER) break;
-    }
-    return { screen: world.state.hearts === 0 ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
+    // Mid-draw: trace the first three strokes of the first cloth only.
+    traceSegments(world, world.state.segments, 1.5, 3);
+    return { screen: world.state.status === 'over' ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
   }
-  if (name === 'upgrade') {
-    for (let i = 0; i < UPGRADE_LIMIT_SECONDS / STEP; i += 1) {
-      const a = autopilot(world.state, true);
-      const events = world.step(STEP, a.steer, a.pulse, false);
-      if (events & EVENT_WAVE_CLEAR) break;
-      if (events & EVENT_OVER) break;
-    }
-    return { screen: world.state.offer.length > 0 ? SCREEN_UPGRADE : SCREEN_PLAY, best: world.state.score };
+  if (name === 'done') {
+    // Visit every remaining guide point: the filtered list can be sparse
+    // where earlier strokes already inked part of this one, so skipping
+    // points would strand a few uninked.
+    traceSegments(world, world.state.segments, 1);
+    return { screen: world.state.status === 'clear' ? SCREEN_CLEAR : SCREEN_PLAY, best: world.state.score };
   }
   if (name === 'end') {
-    for (let i = 0; i < END_LIMIT_SECONDS / STEP; i += 1) {
-      const a = autopilot(world.state, false);
-      if (world.step(STEP, a.steer, a.pulse, false) & EVENT_OVER) break;
+    // Trace every cloth to the gallery, advancing after each clear.
+    for (let c = 0; c < 7; c += 1) {
+      traceSegments(world, world.state.segments, 1);
+      if (world.state.status === 'clear') {
+        const events = world.nextCloth();
+        if (events & EVENT_WIN) break;
+      } else {
+        break;
+      }
     }
-    return { screen: SCREEN_OVER, best: world.state.score };
+    return { screen: world.state.status === 'win' ? SCREEN_WIN : SCREEN_PLAY, best: world.state.score };
   }
-  // Start: the lagoon drifts behind the title, harmless, for a few seconds.
-  for (let i = 0; i < START_SECONDS / STEP; i += 1) {
-    world.step(STEP, { x: 0, y: 0 }, false, true);
-  }
+  // Start: the cloth shimmers behind the title, untouched, for a few seconds.
+  for (let i = 0; i < 6 / STEP; i += 1) world.step(STEP, null);
   return { screen: SCREEN_TITLE, best: 0 };
 }

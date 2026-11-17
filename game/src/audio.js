@@ -1,85 +1,87 @@
-// All of Glowfall's sound, synthesised with WebAudio: no audio files, no network,
-// nothing copyrighted. A tiny bell for an ember (its pitch climbs with the combo),
-// a low thump for a pulse, a buzz for a hit, a fanfare for a cleared wave, and a
-// deep drone for the Tide King. Sound starts only after the player's first gesture
-// (the browser's rule), and M mutes it; every call is safe before that moment.
+// Synthesised WebAudio sounds only: no audio files, no network. A soft pluck
+// when a segment is finished, a pentatonic chime when a cloth lights up, a low
+// thud when a heart is lost, and a warm arpeggio on the win.
+const PLUCK_NOTES = [523.25, 587.33, 659.25, 698.46, 783.99, 880.0, 1046.5];
+const CHIME_NOTES = [523.25, 659.25, 783.99, 1046.5, 1318.5];
+const WIN_NOTES = [392.0, 523.25, 659.25, 783.99, 1046.5, 1318.5, 1568.0];
 
 export function createAudio() {
-  let context = null;
+  let ctx = null;
   let muted = false;
-  let master = null;
+  let pluckIndex = 0;
 
   function ensure() {
-    if (context !== null) return true;
-    try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) return false;
-      context = new AudioContext();
-      master = context.createGain();
-      master.gain.value = 0.22;
-      master.connect(context.destination);
-      return true;
-    } catch {
-      return false;
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      ctx = new AC();
     }
+    if (ctx.state === 'suspended') void ctx.resume();
+    return ctx;
   }
 
-  function tone(freq, dur, type, vol, slideTo) {
-    if (muted || !ensure() || context.state === 'suspended') return;
-    try {
-      if (context.state === 'suspended') void context.resume();
-      const osc = context.createOscillator();
-      const gain = context.createGain();
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, context.currentTime);
-      if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, context.currentTime + dur);
-      gain.gain.setValueAtTime(vol, context.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + dur);
-      osc.connect(gain);
-      gain.connect(master);
-      osc.start();
-      osc.stop(context.currentTime + dur);
-    } catch {
-      // Sound is garnish: a failure here must never stop the game.
-    }
+  function tone(freq, when, dur, type, gain) {
+    const ac = ensure();
+    if (!ac || muted) return;
+    const osc = ac.createOscillator();
+    const g = ac.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(gain, when + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    osc.connect(g);
+    g.connect(ac.destination);
+    osc.start(when);
+    osc.stop(when + dur + 0.05);
   }
 
   return {
-    /** Unlock the audio context from the player's first gesture. */
     unlock() {
       ensure();
+    },
+    get muted() {
+      return muted;
     },
     toggleMute() {
       muted = !muted;
       return muted;
     },
-    isMuted() {
-      return muted;
+    segment() {
+      const ac = ensure();
+      if (!ac) return;
+      const f = PLUCK_NOTES[pluckIndex % PLUCK_NOTES.length];
+      pluckIndex += 1;
+      tone(f, ac.currentTime, 0.5, 'sine', 0.12);
+      tone(f * 2, ac.currentTime, 0.25, 'triangle', 0.04);
     },
-    /** Ember chime: higher with the combo, so a streak sounds like a climb. */
-    ember(combo) {
-      const base = 520 * Math.pow(1.059, Math.min(combo, 12));
-      tone(base, 0.22, 'sine', 0.5);
-      tone(base * 1.5, 0.3, 'sine', 0.25);
+    clear() {
+      const ac = ensure();
+      if (!ac) return;
+      CHIME_NOTES.forEach((f, i) => tone(f, ac.currentTime + i * 0.09, 0.7, 'sine', 0.1));
     },
-    pulse() {
-      tone(180, 0.35, 'sine', 0.7, 60);
-      tone(1200, 0.12, 'triangle', 0.2, 900);
+    heart() {
+      const ac = ensure();
+      if (!ac) return;
+      tone(196.0, ac.currentTime, 0.4, 'sawtooth', 0.07);
+      tone(147.0, ac.currentTime + 0.08, 0.5, 'sawtooth', 0.06);
     },
-    hit() {
-      tone(140, 0.3, 'sawtooth', 0.5, 70);
-    },
-    waveClear() {
-      tone(523, 0.16, 'triangle', 0.45);
-      setTimeout(() => tone(659, 0.16, 'triangle', 0.45), 110);
-      setTimeout(() => tone(784, 0.3, 'triangle', 0.5), 220);
-    },
-    boss() {
-      tone(98, 0.8, 'sawtooth', 0.4, 65);
-      tone(147, 0.8, 'sine', 0.3, 98);
+    // A soft two-note warning when the wax starts cooling: a nudge, not an alarm.
+    warn() {
+      const ac = ensure();
+      if (!ac) return;
+      tone(659.25, ac.currentTime, 0.25, 'sine', 0.08);
+      tone(523.25, ac.currentTime + 0.22, 0.3, 'sine', 0.08);
     },
     win() {
-      [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.35, 'triangle', 0.5), i * 130));
+      const ac = ensure();
+      if (!ac) return;
+      WIN_NOTES.forEach((f, i) => tone(f, ac.currentTime + i * 0.11, 0.8, 'sine', 0.1));
+    },
+    click() {
+      const ac = ensure();
+      if (!ac) return;
+      tone(880.0, ac.currentTime, 0.12, 'triangle', 0.06);
     },
   };
 }

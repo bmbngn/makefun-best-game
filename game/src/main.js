@@ -1,20 +1,20 @@
-// Boot and the one loop: input is read every frame, the world advances in fixed 1/60 s
-// steps (several in a slow frame, none in a fast one), and the renderer paints what is
-// there. The game moves between six screens: title, play, upgrade, paused and game
-// over (won or lost).
+// Boot and the one loop: the pen is read every frame, the world advances in
+// fixed 1/60 s steps, and the renderer paints what is there. The game moves
+// between six screens: title, play, paused, cloth-lit, game over and the win
+// gallery.
 //
-// ?seed=N fixes the lagoon's pattern. ?shot=start|play|upgrade|end (with &seed=N)
+// ?seed=N fixes the cloth's sparkles. ?shot=start|play|done|end (with &seed=N)
 // stages that scene instead of running the loop, paints it twice and sets
 // window.__shotReady for a screenshot.
-import { BEST_KEY, HEARTS, STEP } from './config.js';
+import { BEST_KEY, STEP } from './config.js';
 import { createRandom } from './random.js';
-import { createWorld, EVENT_BOSS, EVENT_EMBER, EVENT_HIT, EVENT_OVER, EVENT_PULSE, EVENT_WAVE_CLEAR, EVENT_WIN } from './world.js';
-import { ACTION_CONFIRM, ACTION_MUTE, ACTION_PAUSE, ACTION_PULSE, createInput } from './input.js';
-import { createRenderer, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE, SCREEN_UPGRADE } from './render.js';
+import { createWorld, EVENT_CLEAR, EVENT_HEART, EVENT_OVER, EVENT_SEGMENT, EVENT_WIN } from './world.js';
+import { ACTION_CONFIRM, ACTION_MUTE, ACTION_PAUSE, ACTION_RESTART, createInput } from './input.js';
+import { createRenderer, SCREEN_CLEAR, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE, SCREEN_WIN } from './render.js';
 import { stageShot } from './shots.js';
 import { createAudio } from './audio.js';
 
-/** The longest frame the loop catches up on; a longer stall (a hidden tab) is dropped, not replayed. */
+/** The longest frame the loop catches up on; a longer stall is dropped. */
 const MAX_FRAME = 0.25;
 
 const params = new URLSearchParams(window.location.search);
@@ -40,7 +40,7 @@ function saveBest(value) {
   try {
     window.localStorage.setItem(BEST_KEY, String(value));
   } catch {
-    // Storage can be off (private windows): the best score then lasts this visit only.
+    // Storage can be off (private windows): the best then lasts this visit only.
   }
 }
 
@@ -57,16 +57,22 @@ function runShot(name) {
 }
 
 function runGame() {
-  const input = createInput(canvas, (x, y) => renderer.toField(x, y));
   let screen = SCREEN_TITLE;
   let best = readBest();
   let accumulator = 0;
   let last = performance.now();
   let muted = false;
+  let pausedFrom = SCREEN_PLAY;
 
-  // Screen readers (and anyone watching the page's text) hear the screen changes and each hit.
   function announce(message) {
     status.textContent = message;
+  }
+
+  function bankBest() {
+    if (world.state.score > best) {
+      best = world.state.score;
+      saveBest(best);
+    }
   }
 
   function startGame() {
@@ -74,117 +80,108 @@ function runGame() {
     accumulator = 0;
     screen = SCREEN_PLAY;
     audio.unlock();
-    announce(`Playing. ${HEARTS} hearts. Gather the embers.`);
+    audio.click();
+    announce('Playing. Three hearts. Trace the gold guides before the wax cools.');
   }
 
-  function endGame() {
-    screen = SCREEN_OVER;
-    if (world.state.score > best) {
-      best = world.state.score;
-      saveBest(best);
-    }
-    if (world.state.won) {
+  function advanceFromClear() {
+    const events = world.nextCloth();
+    if (events & EVENT_WIN) {
+      screen = SCREEN_WIN;
+      bankBest();
       audio.win();
-      announce(`You won! Score ${world.state.score}. Best ${best}.`);
+      announce(`The gallery is lit. Score ${world.state.score}.`);
     } else {
-      announce(`Game over. Score ${world.state.score}. Best ${best}.`);
+      screen = SCREEN_PLAY;
+      audio.click();
+      announce(`Cloth ${world.state.clothIndex + 1} of 7.`);
     }
   }
 
-  function chooseUpgrade(index) {
-    const offer = world.state.offer;
-    if (index < 1 || index > offer.length) return;
-    const picked = offer[index - 1];
-    world.applyUpgrade(picked.id);
-    screen = SCREEN_PLAY;
-    announce(`Blessing: ${picked.name}. Wave ${world.state.wave}.`);
+  // Every state has a reachable next action, and restart always works:
+  // Enter advances on a menu screen and restarts mid-play; R restarts
+  // from anywhere, even paused.
+  function confirm() {
+    if (screen === SCREEN_TITLE) startGame();
+    else if (screen === SCREEN_CLEAR) advanceFromClear();
+    else if (screen === SCREEN_OVER || screen === SCREEN_WIN) startGame();
+    else if (screen === SCREEN_PAUSED) {
+      screen = pausedFrom;
+      announce('Playing.');
+    } else if (screen === SCREEN_PLAY) {
+      startGame();
+      announce('Restarted from the first cloth.');
+    }
   }
 
-  function handleActions(actions) {
-    if (actions & ACTION_MUTE) {
-      muted = audio.toggleMute();
-      announce(muted ? 'Sound muted.' : 'Sound on.');
-    }
-    if (screen === SCREEN_UPGRADE) {
-      const choice = input.takeChoice();
-      if (choice > 0) {
-        chooseUpgrade(choice);
-        return;
-      }
-      // A click on a blessing card picks it: the cards sit in a row, 260 wide.
-      const p = input.pointer();
-      if (p.down && p.y >= 270 && p.y <= 420) {
-        const card = Math.floor((p.x - 220) / 290) + 1;
-        if (card >= 1 && card <= 3 && (p.x - 220) % 290 < 260) chooseUpgrade(card);
-      }
-      return;
-    }
-    if (actions & (ACTION_CONFIRM | ACTION_PULSE) && (screen === SCREEN_TITLE || screen === SCREEN_OVER)) startGame();
-    else if (actions & ACTION_PAUSE && screen === SCREEN_PLAY) {
+  function pause() {
+    if (screen === SCREEN_PLAY) {
+      pausedFrom = SCREEN_PLAY;
       screen = SCREEN_PAUSED;
       announce('Paused.');
-    } else if (actions & (ACTION_PAUSE | ACTION_CONFIRM) && screen === SCREEN_PAUSED) {
-      screen = SCREEN_PLAY;
+    } else if (screen === SCREEN_PAUSED) {
+      screen = pausedFrom;
       announce('Playing.');
     }
   }
 
-  function stepWorld(actions) {
-    if (screen === SCREEN_TITLE) {
-      world.step(STEP, { x: 0, y: 0 }, false, true);
-      return;
-    }
-    const steer = input.steering();
-    const len = Math.hypot(steer.x, steer.y) || 1;
-    const norm = { x: steer.x / len, y: steer.y / len };
-    const events = world.step(STEP, norm, Boolean(actions & ACTION_PULSE), false);
-    if (events & EVENT_EMBER) audio.ember(world.state.combo);
-    if (events & EVENT_PULSE) audio.pulse();
-    if (events & EVENT_BOSS) {
-      audio.boss();
-      announce('The Tide King has risen! Pulse it to wound it.');
-    }
-    if (events & EVENT_HIT) {
-      audio.hit();
-      announce(world.state.hearts === 1 ? 'Hit. 1 heart left.' : `Hit. ${world.state.hearts} hearts left.`);
-    }
-    if (events & EVENT_WAVE_CLEAR) {
-      audio.waveClear();
-      screen = SCREEN_UPGRADE;
-      announce(`Wave cleared. Choose a blessing.`);
-    }
-    if (events & EVENT_WIN) endGame();
-    else if (events & EVENT_OVER) endGame();
+  function mute() {
+    muted = audio.toggleMute();
+    announce(muted ? 'Muted.' : 'Sound on.');
   }
 
-  function frame(now) {
-    requestAnimationFrame(frame);
-    accumulator += Math.min((now - last) / 1000, MAX_FRAME);
-    last = now;
-    // Take the one-shot presses once per frame and share them: the pulse must
-    // reach the world, not be eaten by the screen handler.
-    const actions = input.takeActions();
-    handleActions(actions);
-    if (screen === SCREEN_TITLE || screen === SCREEN_PLAY) {
-      while (accumulator >= STEP && (screen === SCREEN_TITLE || screen === SCREEN_PLAY)) {
-        stepWorld(actions);
-        accumulator -= STEP;
-      }
-    } else {
-      accumulator = 0;
-    }
-    renderer.draw(world.state, screen, best, now / 1000, muted, world.pulseCooldown());
-  }
-
-  // Leaving the tab pauses a running game rather than letting wisps hunt unseen.
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && screen === SCREEN_PLAY) {
-      screen = SCREEN_PAUSED;
-      announce('Paused.');
-    }
+  const pen = createInput(canvas, (x, y) => renderer.toField(x, y), (action) => {
+    if (action === ACTION_CONFIRM) confirm();
+    else if (action === ACTION_PAUSE) pause();
+    else if (action === ACTION_MUTE) mute();
+    else if (action === ACTION_RESTART) startGame();
   });
 
-  announce('Glowfall. Press Enter or click to light the lantern.');
+  // A click (or tap) on a menu screen is a confirm, just like Enter.
+  canvas.addEventListener('pointerdown', () => {
+    if (screen !== SCREEN_PLAY) confirm();
+  });
+
+  // The cooling warning sounds once per cloth, 15 seconds from the end.
+  let warnedCloth = -1;
+  function frame(now) {
+    const dt = Math.min(MAX_FRAME, (now - last) / 1000);
+    last = now;
+    if (screen === SCREEN_PLAY) {
+      if (world.state.timeLeft <= 15 && warnedCloth !== world.state.clothIndex) {
+        warnedCloth = world.state.clothIndex;
+        audio.warn();
+        announce('The wax is cooling — hurry.');
+      }
+      accumulator += dt;
+      while (accumulator >= STEP) {
+        accumulator -= STEP;
+        const events = world.step(STEP, pen);
+        if (events & EVENT_SEGMENT) audio.segment();
+        if (events & EVENT_HEART) audio.heart();
+        if (events & EVENT_CLEAR) {
+          screen = SCREEN_CLEAR;
+          bankBest();
+          audio.clear();
+          announce('Cloth lit! Press Enter for the next cloth.');
+        }
+        if (events & EVENT_OVER) {
+          screen = SCREEN_OVER;
+          bankBest();
+          announce(`The darkness took the cloth. Score ${world.state.score}.`);
+        }
+        if (events & EVENT_WIN) {
+          screen = SCREEN_WIN;
+          bankBest();
+          audio.win();
+        }
+        if (screen !== SCREEN_PLAY) break;
+      }
+    }
+    renderer.draw(world.state, screen, best, now / 1000, muted);
+    requestAnimationFrame(frame);
+  }
+
   requestAnimationFrame(frame);
 }
 
